@@ -16,7 +16,7 @@ from models import Database, User, Worker, Authentication, Appointment, Review, 
 from functools import wraps
 import re
 from werkzeug.utils import secure_filename
-from utils import send_verification_email
+from utils import send_verification_email, send_sms_message
 import cloudinary
 import cloudinary.uploader
 import pytz
@@ -795,6 +795,25 @@ def manage_appointment(app_id, status):
     if app_data:
         audit_log.log('APPOINTMENT', f"Appointment {status.capitalize()}", session.get('email'), 
                       f"Appointment ID: {app_id}, Status set to: {status}")
+        
+        user = user_model.find_by_id(app_data.get('user_id'))
+        worker = worker_model.find_by_id(app_data.get('worker_id'))
+        if user and worker and status in ['accepted', 'rejected']:
+            appointment_date = app_data.get('date', 'N/A')
+            appointment_time = app_data.get('time_slot', 'N/A')
+            if status == 'accepted':
+                sms_message = (
+                    f"Hi {user.get('full_name')}, your CrewHub appointment with {worker.get('full_name')} "
+                    f"on {appointment_date} at {appointment_time} has been accepted.\n"
+                    f"Check details: {Config.PLATFORM_URL}"
+                )
+            else:
+                sms_message = (
+                    f"Hi {user.get('full_name')}, your CrewHub appointment with {worker.get('full_name')} "
+                    f"on {appointment_date} at {appointment_time} has been declined.\n"
+                    f"Please visit {Config.PLATFORM_URL} to book another worker."
+                )
+            send_sms_message(user.get('mobile'), sms_message)
 
     # Redirect to bill generation when completing
     if status == 'completed':
@@ -1016,6 +1035,13 @@ def approve_worker(worker_id):
         
     worker_model.approve(worker_id)
     send_verification_email(worker.get('email'), worker.get('full_name'), 'approved')
+
+    sms_message = (
+        f"Congratulations {worker.get('full_name')}! Your CrewHub worker account is verified and approved.\n"
+        f"Login: {Config.PLATFORM_URL}/login\n"
+        f"You can now start receiving jobs on CrewHub."
+    )
+    send_sms_message(worker.get('mobile'), sms_message)
     
     flash(f"Worker {worker.get('full_name')} approved successfully.", 'success')
     return redirect(url_for('admin_worker_requests'))
@@ -1032,6 +1058,13 @@ def reject_worker(worker_id):
     remark = request.form.get('remark', 'No reason provided')
     worker_model.reject(worker_id, remark)
     send_verification_email(worker.get('email'), worker.get('full_name'), 'rejected', remark)
+
+    sms_message = (
+        f"Hello {worker.get('full_name')}, your CrewHub worker application was rejected.\n"
+        f"Reason: {remark}\n"
+        f"Visit {Config.PLATFORM_URL} for next steps."
+    )
+    send_sms_message(worker.get('mobile'), sms_message)
     
     flash(f"Worker {worker.get('full_name')} rejected.", 'warning')
     return redirect(url_for('admin_worker_requests'))
