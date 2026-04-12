@@ -19,6 +19,11 @@ class Config:
     
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME', '')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD', '')
+
+    SMS_GATEWAY_BASE_URL = os.environ.get('SMS_GATEWAY_BASE_URL', 'https://ds-sms-gateway.vercel.app/api/send')
+    SMS_GATEWAY_AUTH = os.environ.get('SMS_GATEWAY_AUTH', '')
+    
+    PLATFORM_URL = os.environ.get('PLATFORM_URL', 'https://thecrewhub.vercel.app')
     
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'documents')
         
