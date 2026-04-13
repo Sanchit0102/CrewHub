@@ -16,7 +16,7 @@ from models import Database, User, Worker, Authentication, Appointment, Review, 
 from functools import wraps
 import re
 from werkzeug.utils import secure_filename
-from utils import send_verification_email, send_sms_message
+from utils import send_verification_email, send_sms_message, send_appointment_notification
 import cloudinary
 import cloudinary.uploader
 import pytz
@@ -36,7 +36,7 @@ app.config.from_object(Config)
 def get_razorpay_client():
     """Return a Razorpay client if available, else raise a clear error."""
     if razorpay is None:
-        raise RuntimeError('Razorpay is unavailable. Install setuptools and razorpay in requirements.')
+        raise RuntimeError('Currently Razorpay is unavailable.')
 
     return razorpay.Client(
         auth=(
@@ -835,6 +835,18 @@ def manage_appointment(app_id, status):
                     f"Please visit {Config.PLATFORM_URL} to book another worker."
                 )
             send_sms_message(user.get('mobile'), sms_message)
+            
+            # Send email notification
+            send_appointment_notification(
+                to_email=user.get('email'),
+                user_name=user.get('full_name'),
+                worker_name=worker.get('full_name'),
+                service_type=app_data.get('service_type', 'Service'),
+                appointment_date=appointment_date,
+                appointment_time=appointment_time,
+                status=status,
+                platform_url=Config.PLATFORM_URL
+            )
 
     # Redirect to bill generation when completing
     if status == 'completed':
