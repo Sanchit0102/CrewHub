@@ -6,44 +6,7 @@ import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import Config
-import threading
-import time
 
-
-def send_sms_async(mobile_number, message):
-    """
-    Send SMS asynchronously in a background thread to avoid blocking the request.
-    """
-    def send_in_background():
-        time.sleep(1)  # Small delay to ensure request completes
-        send_sms_message(mobile_number, message)
-    
-    thread = threading.Thread(target=send_in_background, daemon=True)
-    thread.start()
-
-
-def send_email_async(to_email, worker_name, status, remark=None):
-    """
-    Send verification email asynchronously in a background thread.
-    """
-    def send_in_background():
-        time.sleep(1)
-        send_verification_email(to_email, worker_name, status, remark)
-    
-    thread = threading.Thread(target=send_in_background, daemon=True)
-    thread.start()
-
-
-def send_appointment_notification_async(to_email, user_name, worker_name, service_type, appointment_date, appointment_time, status, platform_url):
-    """
-    Send appointment notification email asynchronously in a background thread.
-    """
-    def send_in_background():
-        time.sleep(1)
-        send_appointment_notification(to_email, user_name, worker_name, service_type, appointment_date, appointment_time, status, platform_url)
-    
-    thread = threading.Thread(target=send_in_background, daemon=True)
-    thread.start()
 
 # A dummy implementation that just logs to console (useful before proper SMTP is setup)
 # Alternatively, it uses config values if provided.
@@ -51,36 +14,41 @@ def send_sms_message(mobile_number, message):
     """
     Send a plain text SMS via the configured SMS gateway.
     """
-    if not mobile_number or not message:
-        return False
-
-    numeric = re.sub(r'\D', '', str(mobile_number))
-    if len(numeric) == 10:
-        numeric = '91' + numeric
-    elif len(numeric) == 12 and numeric.startswith('91'):
-        pass
-    elif len(numeric) > 12:
-        numeric = '91' + numeric[-10:]
-    else:
-        return False
-
-    to_number = f'+{numeric}'
-    payload = json.dumps({'to': to_number, 'message': message}).encode('utf-8')
-    url = f"{Config.SMS_GATEWAY_BASE_URL}?auth={Config.SMS_GATEWAY_AUTH}"
-
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=8) as response:
+        if not mobile_number or not message:
+            print(f"[SMS] Skipped: missing mobile or message")
+            return False
+
+        numeric = re.sub(r'\D', '', str(mobile_number))
+        if len(numeric) == 10:
+            numeric = '91' + numeric
+        elif len(numeric) == 12 and numeric.startswith('91'):
+            pass
+        elif len(numeric) > 12:
+            numeric = '91' + numeric[-10:]
+        else:
+            print(f"[SMS] Invalid phone number format: {mobile_number}")
+            return False
+
+        to_number = f'+{numeric}'
+        payload = json.dumps({'to': to_number, 'message': message}).encode('utf-8')
+        url = f"{Config.SMS_GATEWAY_BASE_URL}?auth={Config.SMS_GATEWAY_AUTH}"
+
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as response:
             status_code = response.getcode()
             response_body = response.read().decode('utf-8', errors='ignore')
-            print(f"[SMS] Sent to {to_number}. Status: {status_code}. Response: {response_body}")
+            print(f"[SMS SUCCESS] Sent to {to_number}. Status: {status_code}")
             return status_code == 200
     except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8', errors='ignore') if hasattr(e, 'read') else ''
-        print(f"[SMS ERROR] HTTP {e.code} for {to_number}: {error_body}")
+        print(f"[SMS ERROR] HTTP {e.code} to SMS gateway: {e.reason}")
+        return False
+    except urllib.error.URLError as e:
+        print(f"[SMS ERROR] Network error: {str(e)}")
+        return False
     except Exception as e:
-        print(f"[SMS ERROR] Failed to send SMS to {to_number}: {str(e)}")
-    return False
+        print(f"[SMS ERROR] Failed: {str(e)}")
+        return False
 
 
 def send_verification_email(to_email, worker_name, status, remark=None):
@@ -157,6 +125,8 @@ def send_verification_email(to_email, worker_name, status, remark=None):
     sender_email = Config.MAIL_USERNAME
     app_password = Config.MAIL_PASSWORD
     
+    print(f"[Email] Attempting to send to {to_email} from {sender_email}")
+    
     msg['From'] = sender_email
     msg['To'] = to_email
     msg['Subject'] = subject
@@ -169,28 +139,30 @@ def send_verification_email(to_email, worker_name, status, remark=None):
     msg.attach(MIMEText(html_template, 'html'))
 
     # If the user hasn't set up the password yet, fallback to console print
-    if not app_password or app_password == 'your_16_digit_app_password':
-        print(f"\n[WARNING] Email not sent to inbox because MAIL_PASSWORD is not configured in config.py.")
-        print(f"========== EMAIL SENT (SIMULATED) ==========")
-        print(f"TO: {to_email}")
-        print(f"SUBJECT: {subject}")
-        print(f"BODY:\n{text_fallback}")
-        print(f"============================================\n")
-    else:
-        try:
-            # Use Gmail SMTP server with shorter timeout for Vercel
-            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
-            server.starttls(timeout=10)
-            server.login(sender_email, app_password)
-            server.send_message(msg)
-            server.quit()
-            print(f"[SUCCESS] Verification email successfully sent to {to_email}")
-        except smtplib.SMTPAuthenticationError as e:
-            print(f"[ERROR] SMTP Authentication failed for {sender_email}. Check MAIL_USERNAME and MAIL_PASSWORD in Vercel environment variables. Error: {str(e)}")
-        except smtplib.SMTPException as e:
-            print(f"[ERROR] SMTP error sending email. Error: {str(e)}")
-        except Exception as e:
-            print(f"[ERROR] Failed to send email via SMTP. Error: {str(e)}")
+    if not app_password or app_password == 'your_16_digit_app_password' or app_password == 'eahbsppwpavvecwo':
+        print(f"[Email WARNING] Credentials not configured. Skipping email to {to_email}")
+        return False
+    
+    try:
+        # Use Gmail SMTP server with short timeout
+        print(f"[Email] Connecting to Gmail SMTP...")
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=8)
+        server.starttls(timeout=8)
+        print(f"[Email] Logging in as {sender_email}...")
+        server.login(sender_email, app_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"[Email SUCCESS] Verification email sent to {to_email}")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[Email ERROR] Authentication failed for {sender_email}. Check MAIL_USERNAME and MAIL_PASSWORD environment variables on Vercel.")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[Email ERROR] SMTP error: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"[Email ERROR] Failed to send: {str(e)}")
+        return False
 
 
 def send_appointment_notification(to_email, user_name, worker_name, service_type, appointment_date, appointment_time, status, platform_url):
@@ -290,6 +262,8 @@ def send_appointment_notification(to_email, user_name, worker_name, service_type
     sender_email = Config.MAIL_USERNAME
     app_password = Config.MAIL_PASSWORD
     
+    print(f"[Appointment Email] Attempting to send to {to_email}")
+    
     msg['From'] = sender_email
     msg['To'] = to_email
     msg['Subject'] = subject
@@ -301,26 +275,28 @@ def send_appointment_notification(to_email, user_name, worker_name, service_type
     msg.attach(MIMEText(text_fallback, 'plain'))
     msg.attach(MIMEText(html_template, 'html'))
 
-    # If the user hasn't set up the password yet, fallback to console print
+    # If the user hasn't set up the password yet, skip
     if not app_password or app_password == 'your_16_digit_app_password':
-        print(f"\n[WARNING] Email not sent to inbox because MAIL_PASSWORD is not configured in config.py.")
-        print(f"========== EMAIL SENT (SIMULATED) ==========")
-        print(f"TO: {to_email}")
-        print(f"SUBJECT: {subject}")
-        print(f"BODY:\n{text_fallback}")
-        print(f"============================================\n")
-    else:
-        try:
-            # Use Gmail SMTP server with shorter timeout for Vercel
-            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
-            server.starttls(timeout=10)
-            server.login(sender_email, app_password)
-            server.send_message(msg)
-            server.quit()
-            print(f"[SUCCESS] Appointment notification email successfully sent to {to_email}")
-        except smtplib.SMTPAuthenticationError as e:
-            print(f"[ERROR] SMTP Authentication failed for {sender_email}. Check MAIL_USERNAME and MAIL_PASSWORD in Vercel environment variables. Error: {str(e)}")
-        except smtplib.SMTPException as e:
-            print(f"[ERROR] SMTP error sending appointment email. Error: {str(e)}")
-        except Exception as e:
-            print(f"[ERROR] Failed to send appointment notification email. Error: {str(e)}")
+        print(f"[Appointment Email WARNING] Credentials not configured. Skipping email to {to_email}")
+        return False
+    
+    try:
+        # Use Gmail SMTP server with short timeout
+        print(f"[Appointment Email] Connecting to Gmail...")
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=8)
+        server.starttls(timeout=8)
+        print(f"[Appointment Email] Logging in...")
+        server.login(sender_email, app_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"[Appointment Email SUCCESS] Sent to {to_email}")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[Appointment Email ERROR] Authentication failed. Check MAIL_USERNAME and MAIL_PASSWORD environment variables on Vercel.")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[Appointment Email ERROR] SMTP error: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"[Appointment Email ERROR] Failed to send: {str(e)}")
+        return False
