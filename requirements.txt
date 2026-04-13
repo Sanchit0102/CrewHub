@@ -7,4 +7,4 @@ dnspython==2.4.2
 email-validator==2.1.0.post1
 pytz==2023.3.post1
 razorpay==1.4.2
-setuptools
+setuptools>=68.0.0

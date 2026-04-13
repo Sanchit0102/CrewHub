@@ -20,20 +20,31 @@ from utils import send_verification_email, send_sms_message
 import cloudinary
 import cloudinary.uploader
 import pytz
-import razorpay
+
+
+try:
+    import razorpay
+except ImportError:
+    razorpay = None
 
 
 # Initialize Flask application
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# Razorpay TEST MODE – NO REAL MONEY INVOLVED
-razorpay_client = razorpay.Client(
-    auth=(
-        app.config['RAZORPAY_KEY_ID'],
-        app.config['RAZORPAY_KEY_SECRET']
+
+def get_razorpay_client():
+    """Return a Razorpay client if available, else raise a clear error."""
+    if razorpay is None:
+        raise RuntimeError('Razorpay is unavailable. Install setuptools and razorpay in requirements.')
+
+    return razorpay.Client(
+        auth=(
+            app.config['RAZORPAY_KEY_ID'],
+            app.config['RAZORPAY_KEY_SECRET']
+        )
     )
-)
+
 
 # Configuration for Cloudinary
 cloudinary_url = app.config.get('CLOUDINARY_URL')
@@ -944,7 +955,12 @@ def create_payment_order(bill_id):
         'payment_capture': 1
     }
 
-    order = razorpay_client.order.create(data=order_data)
+    try:
+        client = get_razorpay_client()
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+
+    order = client.order.create(data=order_data)
     return jsonify({
         'order_id': order['id'],
         'amount': amount,
@@ -971,12 +987,21 @@ def verify_razorpay_payment():
         return jsonify({'error': 'Bill not found or access denied'}), 404
 
     try:
-        razorpay_client.utility.verify_payment_signature({
+        client = get_razorpay_client()
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+
+    signature_error = Exception
+    if razorpay is not None:
+        signature_error = razorpay.errors.SignatureVerificationError
+
+    try:
+        client.utility.verify_payment_signature({
             'razorpay_order_id': order_id,
             'razorpay_payment_id': payment_id,
             'razorpay_signature': signature
         })
-    except razorpay.errors.SignatureVerificationError:
+    except signature_error:
         return jsonify({'error': 'Payment verification failed'}), 400
     except Exception as e:
         return jsonify({'error': f'Unexpected verification error: {str(e)}'}), 500
