@@ -17,6 +17,8 @@ class Config:
     WITHDRAWAL_DATES = [5, 15, 25] 
     PLATFORM_FEE_PERCENTAGE = 15
 
+    RESET_PASS_OTP_EXPIRY_MINUTES = int(os.environ.get('RESET_PASS_OTP_EXPIRY_MINUTES', 30))
+
     PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
     
     ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', '')

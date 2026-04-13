@@ -315,7 +315,7 @@ def send_appointment_notification(to_email, user_name, worker_name, service_type
         return False
 
 
-def send_reset_password_email(to_email, user_name, otp, expires_minutes=30):
+def send_reset_password_email(to_email, user_name, otp, expires_minutes=Config().RESET_PASS_OTP_EXPIRY_MINUTES):
     """
     Send password reset OTP email.
     """

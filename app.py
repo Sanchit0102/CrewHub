@@ -267,14 +267,14 @@ def forgot_password():
             return render_template('forgot_password.html')
 
         otp = str(random.randint(100000, 999999))
-        expires_at = datetime.utcnow() + timedelta(minutes=30)
+        expires_at = datetime.utcnow() + timedelta(minutes=config.RESET_PASS_OTP_EXPIRY_MINUTES)
 
         if role == 'user':
             user_model.set_reset_otp(email, otp, expires_at)
         else:
             worker_model.set_reset_otp(email, otp, expires_at)
 
-        send_reset_password_email(email, user.get('full_name', 'CrewHub User'), otp, 30)
+        send_reset_password_email(email, user.get('full_name', 'CrewHub User'), otp, config.RESET_PASS_OTP_EXPIRY_MINUTES)
         session['reset_email'] = email
         session['reset_role'] = role
 
