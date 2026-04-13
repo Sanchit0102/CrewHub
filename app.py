@@ -10,21 +10,30 @@ import os
 import uuid
 from datetime import datetime
 from bson.objectid import ObjectId
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from config import Config
 from models import Database, User, Worker, Authentication, Appointment, Review, Report, Bill, Withdrawal, AuditLog
 from functools import wraps
 import re
 from werkzeug.utils import secure_filename
-from utils import send_verification_email
+from utils import send_verification_email, send_sms_message
 import cloudinary
 import cloudinary.uploader
 import pytz
+import razorpay
 
 
 # Initialize Flask application
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Razorpay TEST MODE – NO REAL MONEY INVOLVED
+razorpay_client = razorpay.Client(
+    auth=(
+        app.config['RAZORPAY_KEY_ID'],
+        app.config['RAZORPAY_KEY_SECRET']
+    )
+)
 
 # Configuration for Cloudinary
 cloudinary_url = app.config.get('CLOUDINARY_URL')
@@ -512,8 +521,9 @@ def dashboard():
         # User dashboard: Show recent workers
         context['recent_workers'] = worker_model.get_all_active()[:6]
         context['worker_types'] = Config.WORKER_TYPES
-        # Show user appointments
+        # Show user appointments and invoices
         context['appointments'] = appointment_model.find_by_user(user_id)
+        context['user_bills'] = bill_model.find_by_user(user_id)
     
     elif role == 'worker':
         # Worker dashboard: Show profile info & toggle
@@ -795,6 +805,25 @@ def manage_appointment(app_id, status):
     if app_data:
         audit_log.log('APPOINTMENT', f"Appointment {status.capitalize()}", session.get('email'), 
                       f"Appointment ID: {app_id}, Status set to: {status}")
+        
+        user = user_model.find_by_id(app_data.get('user_id'))
+        worker = worker_model.find_by_id(app_data.get('worker_id'))
+        if user and worker and status in ['accepted', 'rejected']:
+            appointment_date = app_data.get('date', 'N/A')
+            appointment_time = app_data.get('time_slot', 'N/A')
+            if status == 'accepted':
+                sms_message = (
+                    f"Hi {user.get('full_name')}, your CrewHub appointment with {worker.get('full_name')} "
+                    f"on {appointment_date} at {appointment_time} has been accepted.\n"
+                    f"Check details: {Config.PLATFORM_URL}"
+                )
+            else:
+                sms_message = (
+                    f"Hi {user.get('full_name')}, your CrewHub appointment with {worker.get('full_name')} "
+                    f"on {appointment_date} at {appointment_time} has been declined.\n"
+                    f"Please visit {Config.PLATFORM_URL} to book another worker."
+                )
+            send_sms_message(user.get('mobile'), sms_message)
 
     # Redirect to bill generation when completing
     if status == 'completed':
@@ -889,6 +918,82 @@ def view_bill(bill_id):
         return redirect(url_for('dashboard'))
 
     return render_template('view_bill.html', bill=bill)
+
+
+@app.route('/create_payment_order/<bill_id>', methods=['POST'])
+@login_required
+@role_required(['user'])
+def create_payment_order(bill_id):
+    """Create a Razorpay order in TEST MODE for the selected bill"""
+    bill = bill_model.find_by_id(bill_id)
+    if not bill or bill.get('user_id') != session.get('user_id'):
+        return jsonify({'error': 'Bill not found or access denied'}), 404
+
+    if bill.get('paid'):
+        return jsonify({'error': 'Bill is already paid'}), 400
+
+    amount = int(round(bill.get('total', 0) * 100))
+    order_data = {
+        'amount': amount,
+        'currency': app.config['RAZORPAY_CURRENCY'],
+        'receipt': f"invoice_{bill.get('invoice_number')}",
+        'notes': {
+            'bill_id': bill_id,
+            'payment_type': 'TEST PAYMENT'
+        },
+        'payment_capture': 1
+    }
+
+    order = razorpay_client.order.create(data=order_data)
+    return jsonify({
+        'order_id': order['id'],
+        'amount': amount,
+        'currency': order['currency'],
+        'key': app.config['RAZORPAY_KEY_ID']
+    })
+
+
+@app.route('/verify_razorpay_payment', methods=['POST'])
+@login_required
+def verify_razorpay_payment():
+    """Verify Razorpay payment signature and mark bill paid in TEST MODE"""
+    data = request.get_json() or {}
+    bill_id = data.get('bill_id')
+    payment_id = data.get('razorpay_payment_id')
+    order_id = data.get('razorpay_order_id')
+    signature = data.get('razorpay_signature')
+
+    if not all([bill_id, payment_id, order_id, signature]):
+        return jsonify({'error': 'Missing payment information'}), 400
+
+    bill = bill_model.find_by_id(bill_id)
+    if not bill or bill.get('user_id') != session.get('user_id'):
+        return jsonify({'error': 'Bill not found or access denied'}), 404
+
+    try:
+        razorpay_client.utility.verify_payment_signature({
+            'razorpay_order_id': order_id,
+            'razorpay_payment_id': payment_id,
+            'razorpay_signature': signature
+        })
+    except razorpay.errors.SignatureVerificationError:
+        return jsonify({'error': 'Payment verification failed'}), 400
+    except Exception as e:
+        return jsonify({'error': f'Unexpected verification error: {str(e)}'}), 500
+
+    bill_model.mark_paid(bill_id, {
+        'razorpay_payment_id': payment_id,
+        'razorpay_order_id': order_id,
+        'razorpay_signature': signature,
+        'payment_type': 'TEST PAYMENT',
+        'payment_status': 'captured',
+        'transaction_verified_at': datetime.utcnow()
+    })
+
+    audit_log.log('PAYMENT', 'TEST PAYMENT', session.get('email'),
+                  f"Bill ID: {bill_id}, Amount: ₹{bill.get('total')}, Payment ID: {payment_id}")
+
+    return jsonify({'success': True})
 
 
 @app.route('/mark_paid/<bill_id>')
@@ -1016,6 +1121,13 @@ def approve_worker(worker_id):
         
     worker_model.approve(worker_id)
     send_verification_email(worker.get('email'), worker.get('full_name'), 'approved')
+
+    sms_message = (
+        f"Congratulations {worker.get('full_name')}! Your CrewHub worker account is verified and approved.\n"
+        f"Login: {Config.PLATFORM_URL}/login\n"
+        f"You can now start receiving jobs on CrewHub."
+    )
+    send_sms_message(worker.get('mobile'), sms_message)
     
     flash(f"Worker {worker.get('full_name')} approved successfully.", 'success')
     return redirect(url_for('admin_worker_requests'))
@@ -1032,6 +1144,13 @@ def reject_worker(worker_id):
     remark = request.form.get('remark', 'No reason provided')
     worker_model.reject(worker_id, remark)
     send_verification_email(worker.get('email'), worker.get('full_name'), 'rejected', remark)
+
+    sms_message = (
+        f"Hello {worker.get('full_name')}, your CrewHub worker application was rejected.\n"
+        f"Reason: {remark}\n"
+        f"Visit {Config.PLATFORM_URL} for next steps."
+    )
+    send_sms_message(worker.get('mobile'), sms_message)
     
     flash(f"Worker {worker.get('full_name')} rejected.", 'warning')
     return redirect(url_for('admin_worker_requests'))

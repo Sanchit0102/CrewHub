@@ -99,6 +99,49 @@
                 {% endif %}
             </div>
 
+            <div class="bills-section mt-4">
+                <h2>Your Bills</h2>
+                {% if user_bills %}
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Invoice #</th>
+                                <th>Worker</th>
+                                <th>Total</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bill in user_bills %}
+                            <tr>
+                                <td>#{{ '%05d' % bill.invoice_number }}</td>
+                                <td>{{ bill.worker_name }}</td>
+                                <td>₹{{ '%.2f' % bill.total }}</td>
+                                <td>
+                                    {% if bill.paid %}
+                                        <span class="badge badge-success">Paid</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">Unpaid</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('view_bill', bill_id=bill._id) }}" class="btn btn-outline-primary btn-xs">View</a>
+                                    {% if not bill.paid %}
+                                    <button type="button" class="btn btn-primary btn-xs" style="margin-left:4px;" onclick="payBill('{{ bill._id }}')">Pay</button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted">No bills available yet.</p>
+                {% endif %}
+            </div>
+
             {% if recent_workers %}
             <div class="dashboard-workers mt-4">
                 <h2>Recently Registered Workers</h2>
@@ -208,7 +251,6 @@
                                         {% if app.get('bill_id') %}
                                             <a href="{{ url_for('view_bill', bill_id=app.bill_id) }}" class="btn btn-outline-primary btn-xs">View Bill</a>
                                             {% if not app.get('bill_paid') %}
-                                            <a href="{{ url_for('mark_paid', bill_id=app.bill_id) }}" class="btn btn-success btn-xs" style="margin-left:4px;">Mark Paid</a>
                                             {% endif %}
                                         {% else %}
                                             <a href="{{ url_for('generate_bill', app_id=app._id) }}" class="btn btn-primary btn-xs">Generate Bill</a>
@@ -253,4 +295,87 @@
         {% endif %}
     </div>
 </section>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+    function payBill(billId) {
+        fetch('/create_payment_order/' + billId, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            const options = {
+                key: data.key,
+                amount: data.amount,
+                currency: data.currency,
+                order_id: data.order_id,
+                name: 'CrewHub',
+                description: 'Worker Booking Payment',
+                handler: function(response) {
+                    verifyPayment(billId, response);
+                },
+                prefill: {
+                    name: "{{ user_data.get('full_name', '') }}",
+                    email: "{{ session.get('email', '') }}"
+                },
+                theme: {
+                    color: '#4F46E5'
+                },
+                modal: {
+                    ondismiss: function() {
+                        alert('Payment cancelled. No charge was made.');
+                    }
+                }
+            };
+
+            const rzp = new Razorpay(options);
+            rzp.on('payment.failed', function(response) {
+                alert('Payment failed: ' + (response.error.description || 'Please try again.'));
+            });
+            rzp.open();
+        })
+        .catch(error => {
+            alert('Unable to initiate payment. Please try again later.');
+            console.error('Order creation error:', error);
+        });
+    }
+
+    function verifyPayment(billId, response) {
+        fetch('/verify_razorpay_payment', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                bill_id: billId,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature
+            })
+        })
+        .then(resp => resp.json())
+        .then(result => {
+            if (result.success) {
+                window.location.reload();
+            } else {
+                alert(result.error || 'Payment verification failed.');
+            }
+        })
+        .catch(error => {
+            alert('Payment verification failed. Please contact support.');
+            console.error('Verification error:', error);
+        });
+    }
+</script>
 {% endblock %}

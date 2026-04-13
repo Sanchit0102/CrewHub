@@ -436,10 +436,14 @@ class Bill:
         result = self.collection.insert_one(bill_data)
         return str(result.inserted_id)
 
-    def mark_paid(self, bill_id):
+    def mark_paid(self, bill_id, payment_details=None):
+        update_fields = {'paid': True, 'paid_at': datetime.utcnow()}
+        if payment_details:
+            update_fields.update(payment_details)
+
         self.collection.update_one(
             {'_id': ObjectId(bill_id)},
-            {'$set': {'paid': True, 'paid_at': datetime.utcnow()}}
+            {'$set': update_fields}
         )
 
     def find_by_id(self, bill_id):

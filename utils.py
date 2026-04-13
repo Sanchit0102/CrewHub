@@ -1,9 +1,50 @@
+import re
+import json
 import smtplib
+import urllib.request
+import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from config import Config
 
 # A dummy implementation that just logs to console (useful before proper SMTP is setup)
 # Alternatively, it uses config values if provided.
+def send_sms_message(mobile_number, message):
+    """
+    Send a plain text SMS via the configured SMS gateway.
+    """
+    if not mobile_number or not message:
+        return False
+
+    numeric = re.sub(r'\D', '', str(mobile_number))
+    if len(numeric) == 10:
+        numeric = '91' + numeric
+    elif len(numeric) == 12 and numeric.startswith('91'):
+        pass
+    elif len(numeric) > 12:
+        numeric = '91' + numeric[-10:]
+    else:
+        return False
+
+    to_number = f'+{numeric}'
+    payload = json.dumps({'to': to_number, 'message': message}).encode('utf-8')
+    url = f"{Config.SMS_GATEWAY_BASE_URL}?auth={Config.SMS_GATEWAY_AUTH}"
+
+    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            status_code = response.getcode()
+            response_body = response.read().decode('utf-8', errors='ignore')
+            print(f"[SMS] Sent to {to_number}. Status: {status_code}. Response: {response_body}")
+            return status_code == 200
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8', errors='ignore') if hasattr(e, 'read') else ''
+        print(f"[SMS ERROR] HTTP {e.code} for {to_number}: {error_body}")
+    except Exception as e:
+        print(f"[SMS ERROR] Failed to send SMS to {to_number}: {str(e)}")
+    return False
+
+
 def send_verification_email(to_email, worker_name, status, remark=None):
     """
     Sends an email to the worker regarding their verification status.
@@ -14,11 +55,11 @@ def send_verification_email(to_email, worker_name, status, remark=None):
         header_color = "#059669" # Green
         title = "Account Approved"
         text_content = f"Congratulations {worker_name}! Your CrewHub worker account has been successfully verified and approved."
-        action_html = """
+        action_html = f"""
             <div style="text-align: center; margin: 30px 0;">
-                <a href="http://127.0.0.1:5000/login" style="background-color: #4F46E5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Login to CrewHub</a>
+                <a href="{Config.PLATFORM_URL}/login" style="background-color: #4F46E5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Login to CrewHub</a>
             </div>
-            <p style="text-align: center; font-size: 13px; color: #6b7280;">Or copy this link: <a href="http://127.0.0.1:5000/login" style="color: #4F46E5;">http://127.0.0.1:5000/login</a></p>
+            <p style="text-align: center; font-size: 13px; color: #6b7280;">Or copy this link: <a href="{Config.PLATFORM_URL}/login" style="color: #4F46E5;">{Config.PLATFORM_URL}/login</a></p>
         """
     else:
         header_color = "#DC2626" # Red
@@ -95,7 +136,7 @@ def send_verification_email(to_email, worker_name, status, remark=None):
         print(f"========== EMAIL SENT (SIMULATED) ==========")
         print(f"TO: {to_email}")
         print(f"SUBJECT: {subject}")
-        print(f"BODY:\n{body}")
+        print(f"BODY:\n{text_fallback}")
         print(f"============================================\n")
     else:
         try:
