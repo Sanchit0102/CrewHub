@@ -31,17 +31,30 @@ def send_sms_message(mobile_number, message):
             return False
 
         to_number = f'+{numeric}'
-        payload = json.dumps({'to': to_number, 'message': message}).encode('utf-8')
+        # Correct payload format for SMS gateway (auth goes in URL, not payload)
+        payload = json.dumps({
+            'to': to_number, 
+            'message': message
+        }).encode('utf-8')
+        # Auth parameter goes in URL query string
         url = f"{Config.SMS_GATEWAY_BASE_URL}?auth={Config.SMS_GATEWAY_AUTH}"
 
-        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        print(f"[SMS] Sending to URL: {url}")
+        print(f"[SMS] Payload: {payload.decode('utf-8', errors='ignore')[:100]}...")
+        
+        req = urllib.request.Request(url, data=payload, headers={
+            'Content-Type': 'application/json',
+            'User-Agent': 'CrewHub/1.0'
+        })
+        with urllib.request.urlopen(req, timeout=10) as response:
             status_code = response.getcode()
             response_body = response.read().decode('utf-8', errors='ignore')
-            print(f"[SMS SUCCESS] Sent to {to_number}. Status: {status_code}")
+            print(f"[SMS SUCCESS] Sent to {to_number}. Status: {status_code}, Response: {response_body[:100]}")
             return status_code == 200
     except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8', errors='ignore') if e.fp else 'No response body'
         print(f"[SMS ERROR] HTTP {e.code} to SMS gateway: {e.reason}")
+        print(f"[SMS ERROR] Response body: {error_body[:200]}")
         return False
     except urllib.error.URLError as e:
         print(f"[SMS ERROR] Network error: {str(e)}")
@@ -147,7 +160,7 @@ def send_verification_email(to_email, worker_name, status, remark=None):
         # Use Gmail SMTP server with short timeout
         print(f"[Email] Connecting to Gmail SMTP...")
         server = smtplib.SMTP('smtp.gmail.com', 587, timeout=8)
-        server.starttls(timeout=8)
+        server.starttls()
         print(f"[Email] Logging in as {sender_email}...")
         server.login(sender_email, app_password)
         server.send_message(msg)
@@ -284,7 +297,7 @@ def send_appointment_notification(to_email, user_name, worker_name, service_type
         # Use Gmail SMTP server with short timeout
         print(f"[Appointment Email] Connecting to Gmail...")
         server = smtplib.SMTP('smtp.gmail.com', 587, timeout=8)
-        server.starttls(timeout=8)
+        server.starttls()
         print(f"[Appointment Email] Logging in...")
         server.login(sender_email, app_password)
         server.send_message(msg)
