@@ -129,7 +129,7 @@
                                 <td>
                                     <a href="{{ url_for('view_bill', bill_id=bill._id) }}" class="btn btn-outline-primary btn-xs">View</a>
                                     {% if not bill.paid %}
-                                    <button type="button" class="btn btn-primary btn-xs" style="margin-left:4px;" onclick="payBill('{{ bill._id }}')">Pay</button>
+                                    <button type="button" class="btn btn-primary btn-xs" onclick="payBill('{{ bill._id }}')">Pay</button>
                                     {% endif %}
                                 </td>
                             </tr>

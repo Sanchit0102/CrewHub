@@ -888,6 +888,29 @@ textarea.form-control { resize:vertical; min-height: 80px; }
     .admin-page-header { flex-direction:column; align-items:flex-start; }
     .row { flex-direction:column; }
     .col-6, .col-md-3, .col-md-5, .col-md-7, .col-md-10, .col-md-2, .col-lg-4, .col-lg-8, .col-sm-6 { width:100%; }
+    
+    /* Mobile table button improvements */
+    .table td { padding: 12px 10px; font-size: 13px; }
+    .table th { padding: 12px 10px; font-size: 11px; }
+    
+    /* Action column buttons - stack vertically on mobile */
+    .table td:last-child { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 8px;
+        padding: 10px;
+    }
+    
+    .table td:last-child .btn {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 12px;
+        margin: 0 !important;
+    }
+    
+    .table td:last-child .btn-xs {
+        padding: 6px 10px;
+    }
 }
 
 @media(max-width:480px) {

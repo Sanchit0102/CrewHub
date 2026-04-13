@@ -10,8 +10,8 @@ class Config:
     CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')
 
     # Razorpay test credentials for demo/development only
-    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID') or 'rzp_test_Scg7T8ulVIgXBA'
-    RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET') or 'jZyIrEYjvskRtpITKANLdSm5'
+    RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID') 
+    RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET')
     RAZORPAY_CURRENCY = 'INR'
 
     WITHDRAWAL_DATES = [5, 15, 25] 
