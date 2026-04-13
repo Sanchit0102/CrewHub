@@ -805,6 +805,8 @@ def make_appointment(worker_id):
 @role_required(['worker'])
 def manage_appointment(app_id, status):
     """Worker accepts or rejects appointment"""
+    print(f"[DEBUG] manage_appointment called with app_id={app_id}, status={status}")
+    
     if status not in ['accepted', 'rejected', 'completed']:
         flash('Invalid status update', 'error')
         return redirect(url_for('dashboard'))
@@ -819,9 +821,17 @@ def manage_appointment(app_id, status):
         
         user = user_model.find_by_id(app_data.get('user_id'))
         worker = worker_model.find_by_id(app_data.get('worker_id'))
+        
+        print(f"[DEBUG] Found user: {user is not None}, worker: {worker is not None}")
+        print(f"[DEBUG] Status check: {status in ['accepted', 'rejected']}")
+        
         if user and worker and status in ['accepted', 'rejected']:
             appointment_date = app_data.get('date', 'N/A')
             appointment_time = app_data.get('time_slot', 'N/A')
+            
+            print(f"[DEBUG] User email: {user.get('email')}, mobile: {user.get('mobile')}")
+            print(f"[DEBUG] Worker name: {worker.get('full_name')}")
+            
             if status == 'accepted':
                 sms_message = (
                     f"Hi {user.get('full_name')}, your CrewHub appointment with {worker.get('full_name')} "
@@ -834,10 +844,14 @@ def manage_appointment(app_id, status):
                     f"on {appointment_date} at {appointment_time} has been declined.\n"
                     f"Please visit {Config.PLATFORM_URL} to book another worker."
                 )
-            send_sms_message(user.get('mobile'), sms_message)
+            
+            print(f"[DEBUG] About to send SMS to {user.get('mobile')}")
+            sms_result = send_sms_message(user.get('mobile'), sms_message)
+            print(f"[DEBUG] SMS result: {sms_result}")
             
             # Send email notification
-            send_appointment_notification(
+            print(f"[DEBUG] About to send email to {user.get('email')}")
+            email_result = send_appointment_notification(
                 to_email=user.get('email'),
                 user_name=user.get('full_name'),
                 worker_name=worker.get('full_name'),
@@ -847,6 +861,11 @@ def manage_appointment(app_id, status):
                 status=status,
                 platform_url=Config.PLATFORM_URL
             )
+            print(f"[DEBUG] Email result: {email_result}")
+        else:
+            print(f"[DEBUG] Skipping notifications - user: {user is not None}, worker: {worker is not None}, status: {status}")
+    else:
+        print(f"[DEBUG] No appointment data found for app_id: {app_id}")
 
     # Redirect to bill generation when completing
     if status == 'completed':
