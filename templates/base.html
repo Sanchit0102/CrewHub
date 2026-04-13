@@ -63,6 +63,7 @@
                         {% if session.role == 'worker' %}
                         <a href="{{ url_for('worker_salary') }}" class="nav-link" id="nav-salary">Earning</a>
                         {% endif %}
+                        <a href="{{ url_for('profile') }}" class="nav-link" id="nav-profile">Profile</a>
                         <a href="{{ url_for('logout') }}" class="nav-link nav-link-logout" id="nav-logout">Logout</a>
                     {% else %}
                         <a href="{{ url_for('login') }}" class="nav-link" id="nav-login">Login</a>

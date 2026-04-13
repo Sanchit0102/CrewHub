@@ -335,6 +335,21 @@ textarea.form-control { resize:vertical; min-height: 80px; }
 .auth-footer { text-align:center; margin-top:28px; color: var(--text-secondary); font-size:14px; }
 .auth-footer a { font-weight:600; }
 
+.otp-grid {
+    display:grid;
+    grid-template-columns:repeat(6, minmax(0, 1fr));
+    gap:12px;
+}
+.otp-input {
+    text-align:center;
+    font-size:18px;
+    letter-spacing: 0.2em;
+    border-radius: var(--radius);
+    padding: 14px 10px;
+    border: 2px solid var(--border);
+}
+.otp-input:focus { outline:none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+
 /* Role Switcher */
 .role-switcher-container { max-width:320px; margin:0 auto 8px; }
 .role-switcher {

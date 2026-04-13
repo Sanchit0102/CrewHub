@@ -313,3 +313,75 @@ def send_appointment_notification(to_email, user_name, worker_name, service_type
     except Exception as e:
         print(f"[Appointment Email ERROR] Failed to send: {str(e)}")
         return False
+
+
+def send_reset_password_email(to_email, user_name, otp, expires_minutes=30):
+    """
+    Send password reset OTP email.
+    """
+    subject = 'CrewHub Password Reset OTP'
+    html_template = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset=\"utf-8\">
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+    </head>
+    <body style=\"font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 40px 20px;\">
+        <div style=\"max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);\">
+            <div style=\"background-color: #4F46E5; padding: 30px 20px; text-align: center;\">
+                <h1 style=\"color: #ffffff; margin: 0; font-size: 28px; letter-spacing: 1px;\">CrewHub Support</h1>
+            </div>
+            <div style=\"padding: 40px 30px;\">
+                <h2 style=\"color: #1f2937; margin-top: 0;\">Password Reset Request</h2>
+                <p style=\"color: #4b5563; font-size: 16px; line-height: 1.5;\">Dear {user_name},</p>
+                <p style=\"color: #4b5563; font-size: 16px; line-height: 1.5;\">
+                    We received a request to reset the password for your account associated with this email address.
+                </p>
+                <div style=\"background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin: 24px 0; text-align: center;\">
+                    <p style=\"color: #6b7280; font-size: 14px; margin-bottom: 10px;\">Your One-Time Password (OTP) is:</p>
+                    <p style=\"font-size: 28px; font-weight: 700; margin: 0; letter-spacing: 6px; color: #111827;\">{otp}</p>
+                </div>
+                <p style=\"color: #4b5563; font-size: 16px; line-height: 1.5;\">This OTP is valid for the next {expires_minutes} minutes. Please do not share this code with anyone for security reasons.</p>
+                <p style=\"color: #4b5563; font-size: 16px; line-height: 1.5;\">If you did not request a password reset, please ignore this email or contact our support team immediately.</p>
+                <p style=\"color: #4b5563; font-size: 16px; line-height: 1.5;\">Thank you,<br>CrewHub Support Team</p>
+            </div>
+            <div style=\"background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;\">
+                <p style=\"color: #9ca3af; font-size: 13px; margin: 0;\">Need help? Contact us at <a href=\"mailto:support@crewhub.in\" style=\"color: #4F46E5; text-decoration: none;\">support@crewhub.in</a></p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart('alternative')
+    sender_email = Config.MAIL_USERNAME
+    app_password = Config.MAIL_PASSWORD
+
+    if not sender_email or not app_password or app_password == 'your_16_digit_app_password':
+        print(f"[Reset Email WARNING] SMTP credentials not configured. Skipping reset OTP email to {to_email}")
+        return False
+
+    msg['From'] = sender_email
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(f"Dear {user_name},\n\nYour OTP is: {otp}\nThis OTP is valid for the next {expires_minutes} minutes.\n\nIf you did not request a password reset, please ignore this email.", 'plain'))
+    msg.attach(MIMEText(html_template, 'html'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=8)
+        server.starttls()
+        server.login(sender_email, app_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"[Reset Email SUCCESS] Sent OTP email to {to_email}")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[Reset Email ERROR] Authentication failed for {sender_email}. Check MAIL_USERNAME and MAIL_PASSWORD environment variables.")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[Reset Email ERROR] SMTP error: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"[Reset Email ERROR] Failed to send: {str(e)}")
+        return False

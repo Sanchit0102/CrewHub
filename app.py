@@ -8,7 +8,8 @@ Scalability: Modular architecture allows easy addition of features like ratings,
 
 import os
 import uuid
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from bson.objectid import ObjectId
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from config import Config
@@ -16,7 +17,7 @@ from models import Database, User, Worker, Authentication, Appointment, Review, 
 from functools import wraps
 import re
 from werkzeug.utils import secure_filename
-from utils import send_verification_email, send_sms_message, send_appointment_notification
+from utils import send_verification_email, send_sms_message, send_appointment_notification, send_reset_password_email
 import cloudinary
 import cloudinary.uploader
 import pytz
@@ -242,6 +243,84 @@ def login():
             flash('Invalid email or password', 'error')
     
     return render_template('login.html')
+
+
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        if not email:
+            flash('Please enter your email address', 'error')
+            return render_template('forgot_password.html')
+
+        user = user_model.find_by_email(email)
+        role = 'user'
+        if not user:
+            user = worker_model.find_by_email(email)
+            role = 'worker'
+
+        if not user:
+            flash('Email does not exist in our records', 'error')
+            return render_template('forgot_password.html')
+
+        otp = str(random.randint(100000, 999999))
+        expires_at = datetime.utcnow() + timedelta(minutes=30)
+
+        if role == 'user':
+            user_model.set_reset_otp(email, otp, expires_at)
+        else:
+            worker_model.set_reset_otp(email, otp, expires_at)
+
+        send_reset_password_email(email, user.get('full_name', 'CrewHub User'), otp, 30)
+        session['reset_email'] = email
+        session['reset_role'] = role
+
+        flash('OTP sent to your email. Please check your inbox.', 'success')
+        return redirect(url_for('reset_password'))
+
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_password():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+
+    reset_email = session.get('reset_email')
+    reset_role = session.get('reset_role')
+    if not reset_email or not reset_role:
+        flash('Please request a password reset first.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    if request.method == 'POST':
+        otp = ''.join(request.form.get(f'otp{i}', '').strip() for i in range(1, 7))
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if not otp or len(otp) != 6 or not password or not confirm_password:
+            flash('Please complete all fields', 'error')
+            return render_template('reset_password.html', email=reset_email)
+
+        if password != confirm_password:
+            flash('Passwords do not match', 'error')
+            return render_template('reset_password.html', email=reset_email)
+
+        model = user_model if reset_role == 'user' else worker_model
+        if not model.verify_reset_otp(reset_email, otp):
+            flash('Invalid or expired OTP. Please try again.', 'error')
+            return render_template('reset_password.html', email=reset_email)
+
+        model.update_password_by_email(reset_email, password)
+        session.pop('reset_email', None)
+        session.pop('reset_role', None)
+
+        flash('Password changed successfully. Please login.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', email=reset_email)
 
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -568,6 +647,88 @@ def dashboard():
     return render_template('dashboard.html', **context)
 
 
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    role = session.get('role')
+    user_id = session.get('user_id')
+    current_user = auth.get_user_by_id_and_role(user_id, role)
+
+    if not current_user:
+        flash('User not found', 'error')
+        return redirect(url_for('logout'))
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'update')
+
+        if action == 'delete':
+            confirm_text = request.form.get('delete_confirm', '').strip().lower()
+            if confirm_text != 'delete my account':
+                flash('Please type "delete my account" exactly to confirm account deletion.', 'error')
+                return render_template('profile.html', role=role, user=current_user)
+
+            if role == 'user':
+                user_model.delete(user_id)
+            else:
+                worker_model.delete(user_id)
+
+            session.clear()
+            flash('Your account has been deleted successfully.', 'success')
+            return redirect(url_for('login'))
+
+        if role == 'user':
+            full_name = request.form.get('full_name', '').strip()
+            mobile = request.form.get('mobile', '').strip()
+            pincode = request.form.get('pincode', '').strip()
+            address = request.form.get('address', '').strip()
+
+            if not all([full_name, mobile, pincode, address]):
+                flash('Please fill in all required fields.', 'error')
+                return render_template('profile.html', role=role, user=current_user)
+
+            user_model.update_profile(user_id, full_name, mobile, pincode, address)
+            flash('Profile updated successfully.', 'success')
+        else:
+            mobile = request.form.get('mobile', '').strip()
+            pincode = request.form.get('pincode', '').strip()
+            address = request.form.get('address', '').strip()
+            available_cities = request.form.get('available_cities', '').strip()
+            payment_method = request.form.get('payment_method')
+            payment_details = {}
+
+            if not all([mobile, pincode, address, available_cities]):
+                flash('Please fill in all required fields.', 'error')
+                return render_template('profile.html', role=role, user=current_user)
+
+            if payment_method == 'bank':
+                payment_details = {
+                    'name': request.form.get('bank_name', '').strip(),
+                    'account_no': request.form.get('account_no', '').strip(),
+                    'ifsc': request.form.get('ifsc', '').strip()
+                }
+                if not all(payment_details.values()):
+                    flash('Please fill in all bank details or choose another payment method.', 'error')
+                    return render_template('profile.html', role=role, user=current_user)
+            elif payment_method == 'upi':
+                payment_details = {
+                    'name': request.form.get('upi_name', '').strip(),
+                    'upi_id': request.form.get('upi_id', '').strip()
+                }
+                if not all(payment_details.values()):
+                    flash('Please fill in all UPI details or choose another payment method.', 'error')
+                    return render_template('profile.html', role=role, user=current_user)
+            else:
+                payment_method = current_user.get('payment_method')
+                payment_details = current_user.get('payment_details', {}) or {}
+
+            worker_model.update_profile(user_id, mobile, pincode, address, available_cities, payment_method, payment_details)
+            flash('Profile updated successfully.', 'success')
+
+        return redirect(url_for('profile'))
+
+    return render_template('profile.html', role=role, user=current_user)
+
+
 @app.route('/worker/salary')
 @login_required
 @role_required(['worker'])
@@ -620,42 +781,40 @@ def worker_request_withdrawal():
         return redirect(url_for('worker_salary'))
 
     if request.method == 'POST':
-        method = request.form.get('method') # bank or upi
-        details = {}
-        
-        if method == 'bank':
-            details = {
-                'name': request.form.get('bank_name'),
-                'account_no': request.form.get('account_no'),
-                'ifsc': request.form.get('ifsc')
-            }
-        else:
-            details = {
-                'name': request.form.get('upi_name'),
-                'upi_id': request.form.get('upi_id')
-            }
-            
-        # Calculate fee based on config
+        payment_method = worker.get('payment_method')
+        payment_details = worker.get('payment_details', {}) or {}
+
+        if not payment_method or payment_method not in ['bank', 'upi']:
+            flash('Please add your payment method and details in your profile before requesting a withdrawal.', 'error')
+            return redirect(url_for('profile'))
+
+        if payment_method == 'bank':
+            if not payment_details.get('name') or not payment_details.get('account_no') or not payment_details.get('ifsc'):
+                flash('Please complete your bank transfer details in profile before withdrawing.', 'error')
+                return redirect(url_for('profile'))
+        elif payment_method == 'upi':
+            if not payment_details.get('name') or not payment_details.get('upi_id'):
+                flash('Please complete your UPI details in profile before withdrawing.', 'error')
+                return redirect(url_for('profile'))
+
         fee_percent = app.config.get('PLATFORM_FEE_PERCENTAGE', 10)
         fee_fraction = fee_percent / 100.0
-        
+
         withdrawal_id = withdrawal_model.create(
             worker_id=worker_id,
             worker_name=worker.get('full_name'),
             amount=current_balance,
-            method=method,
-            details=details,
+            method=payment_method,
+            details=payment_details,
             fee_fraction=fee_fraction
         )
-        
-        # Mark bills as withdrawn (in-process)
+
         bill_ids = [str(b['_id']) for b in unpaid_bills]
         bill_model.mark_withdrawn(bill_ids)
-        
-        # Log the action
+
         audit_log.log('PAYMENT', "Withdrawal Requested", worker.get('email'), 
-                      f"Amount: ₹{current_balance}, Method: {method.upper()}")
-        
+                      f"Amount: ₹{current_balance}, Method: {payment_method.upper()}")
+
         flash('Withdrawal request submitted! Admin will process this soon.', 'success')
         return redirect(url_for('worker_salary'))
 
@@ -666,7 +825,9 @@ def worker_request_withdrawal():
     return render_template('worker_request_withdrawal.html', 
                           current_balance=current_balance,
                           platform_fee=current_balance * fee_fraction,
-                          final_amount=current_balance * (1.0 - fee_fraction))
+                          final_amount=current_balance * (1.0 - fee_fraction),
+                          payment_method=worker.get('payment_method'),
+                          payment_details=worker.get('payment_details', {}) or {})
 
 
 @app.route('/worker/view_withdrawal_bill/<withdrawal_id>')

@@ -116,6 +116,46 @@ class User:
             return user
         return None
 
+    def set_reset_otp(self, email, otp, expires_at):
+        return self.collection.update_one(
+            {'email': email},
+            {'$set': {'reset_otp': otp, 'reset_otp_expires': expires_at, 'updated_at': datetime.utcnow()}}
+        )
+
+    def verify_reset_otp(self, email, otp):
+        user = self.find_by_email(email)
+        if not user:
+            return False
+        if user.get('reset_otp') == otp and user.get('reset_otp_expires') and datetime.utcnow() < user.get('reset_otp_expires'):
+            return True
+        return False
+
+    def update_password_by_email(self, email, password):
+        return self.collection.update_one(
+            {'email': email},
+            {'$set': {
+                'password': generate_password_hash(password),
+                'reset_otp': None,
+                'reset_otp_expires': None,
+                'updated_at': datetime.utcnow()
+            }}
+        )
+
+    def update_profile(self, user_id, full_name, mobile, pincode, address):
+        return self.collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': {
+                'full_name': full_name,
+                'mobile': mobile,
+                'pincode': pincode,
+                'address': address,
+                'updated_at': datetime.utcnow()
+            }}
+        )
+
+    def delete(self, user_id):
+        self.collection.delete_one({'_id': ObjectId(user_id)})
+
     def get_all_users(self):
         return list(self.collection.find({'role': 'user'}))
 
@@ -171,8 +211,8 @@ class Worker:
         # New Registration
         worker_data['rating'] = 0.0
         worker_data['total_reviews'] = 0
-        worker_data['created_at'] = datetime.utcnow()
-        
+        worker_data['payment_method'] = None
+        worker_data['payment_details'] = {}
         result = self.collection.insert_one(worker_data)
         return str(result.inserted_id)
     
@@ -193,6 +233,52 @@ class Worker:
         if worker and check_password_hash(worker['password'], password):
             return worker
         return None
+
+    def set_reset_otp(self, email, otp, expires_at):
+        return self.collection.update_one(
+            {'email': email},
+            {'$set': {'reset_otp': otp, 'reset_otp_expires': expires_at, 'updated_at': datetime.utcnow()}}
+        )
+
+    def verify_reset_otp(self, email, otp):
+        worker = self.find_by_email(email)
+        if not worker:
+            return False
+        if worker.get('reset_otp') == otp and worker.get('reset_otp_expires') and datetime.utcnow() < worker.get('reset_otp_expires'):
+            return True
+        return False
+
+    def update_password_by_email(self, email, password):
+        return self.collection.update_one(
+            {'email': email},
+            {'$set': {
+                'password': generate_password_hash(password),
+                'reset_otp': None,
+                'reset_otp_expires': None,
+                'updated_at': datetime.utcnow()
+            }}
+        )
+
+    def update_profile(self, worker_id, mobile, pincode, address, available_cities, payment_method=None, payment_details=None):
+        update_data = {
+            'mobile': mobile,
+            'pincode': pincode,
+            'address': address,
+            'available_cities': available_cities,
+            'updated_at': datetime.utcnow()
+        }
+        if payment_method:
+            update_data['payment_method'] = payment_method
+            update_data['payment_details'] = payment_details or {}
+
+        return self.collection.update_one(
+            {'_id': ObjectId(worker_id)},
+            {'$set': update_data}
+        )
+
+    def delete(self, worker_id):
+        """Delete a worker entirely"""
+        self.collection.delete_one({'_id': ObjectId(worker_id)})
     
     def search(self, worker_type=None, pincode=None, city=None):
         """
