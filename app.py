@@ -16,7 +16,7 @@ from models import Database, User, Worker, Authentication, Appointment, Review, 
 from functools import wraps
 import re
 from werkzeug.utils import secure_filename
-from utils import send_verification_email, send_sms_message, send_appointment_notification
+from utils import send_verification_email, send_sms_message, send_appointment_notification, send_email_async, send_sms_async, send_appointment_notification_async
 import cloudinary
 import cloudinary.uploader
 import pytz
@@ -834,10 +834,10 @@ def manage_appointment(app_id, status):
                     f"on {appointment_date} at {appointment_time} has been declined.\n"
                     f"Please visit {Config.PLATFORM_URL} to book another worker."
                 )
-            send_sms_message(user.get('mobile'), sms_message)
+            send_sms_async(user.get('mobile'), sms_message)
             
-            # Send email notification
-            send_appointment_notification(
+            # Send email notification asynchronously
+            send_appointment_notification_async(
                 to_email=user.get('email'),
                 user_name=user.get('full_name'),
                 worker_name=worker.get('full_name'),
@@ -1157,14 +1157,14 @@ def approve_worker(worker_id):
         return redirect(url_for('admin_worker_requests'))
         
     worker_model.approve(worker_id)
-    send_verification_email(worker.get('email'), worker.get('full_name'), 'approved')
+    send_email_async(worker.get('email'), worker.get('full_name'), 'approved')
 
     sms_message = (
         f"Congratulations {worker.get('full_name')}! Your CrewHub worker account is verified and approved.\n"
         f"Login: {Config.PLATFORM_URL}/login\n"
         f"You can now start receiving jobs on CrewHub."
     )
-    send_sms_message(worker.get('mobile'), sms_message)
+    send_sms_async(worker.get('mobile'), sms_message)
     
     flash(f"Worker {worker.get('full_name')} approved successfully.", 'success')
     return redirect(url_for('admin_worker_requests'))
@@ -1180,14 +1180,14 @@ def reject_worker(worker_id):
         
     remark = request.form.get('remark', 'No reason provided')
     worker_model.reject(worker_id, remark)
-    send_verification_email(worker.get('email'), worker.get('full_name'), 'rejected', remark)
+    send_email_async(worker.get('email'), worker.get('full_name'), 'rejected', remark)
 
     sms_message = (
         f"Hello {worker.get('full_name')}, your CrewHub worker application was rejected.\n"
         f"Reason: {remark}\n"
         f"Visit {Config.PLATFORM_URL} for next steps."
     )
-    send_sms_message(worker.get('mobile'), sms_message)
+    send_sms_async(worker.get('mobile'), sms_message)
     
     flash(f"Worker {worker.get('full_name')} rejected.", 'warning')
     return redirect(url_for('admin_worker_requests'))

@@ -6,6 +6,44 @@ import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import Config
+import threading
+import time
+
+
+def send_sms_async(mobile_number, message):
+    """
+    Send SMS asynchronously in a background thread to avoid blocking the request.
+    """
+    def send_in_background():
+        time.sleep(1)  # Small delay to ensure request completes
+        send_sms_message(mobile_number, message)
+    
+    thread = threading.Thread(target=send_in_background, daemon=True)
+    thread.start()
+
+
+def send_email_async(to_email, worker_name, status, remark=None):
+    """
+    Send verification email asynchronously in a background thread.
+    """
+    def send_in_background():
+        time.sleep(1)
+        send_verification_email(to_email, worker_name, status, remark)
+    
+    thread = threading.Thread(target=send_in_background, daemon=True)
+    thread.start()
+
+
+def send_appointment_notification_async(to_email, user_name, worker_name, service_type, appointment_date, appointment_time, status, platform_url):
+    """
+    Send appointment notification email asynchronously in a background thread.
+    """
+    def send_in_background():
+        time.sleep(1)
+        send_appointment_notification(to_email, user_name, worker_name, service_type, appointment_date, appointment_time, status, platform_url)
+    
+    thread = threading.Thread(target=send_in_background, daemon=True)
+    thread.start()
 
 # A dummy implementation that just logs to console (useful before proper SMTP is setup)
 # Alternatively, it uses config values if provided.
@@ -32,7 +70,7 @@ def send_sms_message(mobile_number, message):
 
     req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
+        with urllib.request.urlopen(req, timeout=8) as response:
             status_code = response.getcode()
             response_body = response.read().decode('utf-8', errors='ignore')
             print(f"[SMS] Sent to {to_number}. Status: {status_code}. Response: {response_body}")
@@ -140,15 +178,19 @@ def send_verification_email(to_email, worker_name, status, remark=None):
         print(f"============================================\n")
     else:
         try:
-            # Use Gmail SMTP server
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
+            # Use Gmail SMTP server with shorter timeout for Vercel
+            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
+            server.starttls(timeout=10)
             server.login(sender_email, app_password)
             server.send_message(msg)
             server.quit()
             print(f"[SUCCESS] Verification email successfully sent to {to_email}")
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[ERROR] SMTP Authentication failed for {sender_email}. Check MAIL_USERNAME and MAIL_PASSWORD in Vercel environment variables. Error: {str(e)}")
+        except smtplib.SMTPException as e:
+            print(f"[ERROR] SMTP error sending email. Error: {str(e)}")
         except Exception as e:
-            print(f"[ERROR] Failed to send email via SMTP. Ensure your App Password is correct. Error: {str(e)}")
+            print(f"[ERROR] Failed to send email via SMTP. Error: {str(e)}")
 
 
 def send_appointment_notification(to_email, user_name, worker_name, service_type, appointment_date, appointment_time, status, platform_url):
@@ -269,12 +311,16 @@ def send_appointment_notification(to_email, user_name, worker_name, service_type
         print(f"============================================\n")
     else:
         try:
-            # Use Gmail SMTP server
-            server = smtplib.SMTP('smtp.gmail.com', 587)
-            server.starttls()
+            # Use Gmail SMTP server with shorter timeout for Vercel
+            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
+            server.starttls(timeout=10)
             server.login(sender_email, app_password)
             server.send_message(msg)
             server.quit()
             print(f"[SUCCESS] Appointment notification email successfully sent to {to_email}")
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[ERROR] SMTP Authentication failed for {sender_email}. Check MAIL_USERNAME and MAIL_PASSWORD in Vercel environment variables. Error: {str(e)}")
+        except smtplib.SMTPException as e:
+            print(f"[ERROR] SMTP error sending appointment email. Error: {str(e)}")
         except Exception as e:
             print(f"[ERROR] Failed to send appointment notification email. Error: {str(e)}")
