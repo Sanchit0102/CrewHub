@@ -274,7 +274,7 @@ def forgot_password():
         else:
             worker_model.set_reset_otp(email, otp, expires_at)
 
-        send_reset_password_email(email, user.get('full_name', 'CrewHub User'), otp, config.RESET_PASS_OTP_EXPIRY_MINUTES)
+        send_reset_password_email(email, user.get('full_name', 'CrewHub User'), otp, Config.RESET_PASS_OTP_EXPIRY_MINUTES)
         session['reset_email'] = email
         session['reset_role'] = role
 
