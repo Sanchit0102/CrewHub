@@ -267,7 +267,7 @@ def forgot_password():
             return render_template('forgot_password.html')
 
         otp = str(random.randint(100000, 999999))
-        expires_at = datetime.utcnow() + timedelta(minutes=config.RESET_PASS_OTP_EXPIRY_MINUTES)
+        expires_at = datetime.utcnow() + timedelta(minutes=Config.RESET_PASS_OTP_EXPIRY_MINUTES)
 
         if role == 'user':
             user_model.set_reset_otp(email, otp, expires_at)
