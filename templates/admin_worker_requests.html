@@ -30,7 +30,7 @@
                 <tbody>
                     {% for worker in pending_workers %}
                     <tr>
-                        <td class="align-middle text-muted small">{{ worker.created_at.strftime('%Y-%m-%d') }}</td>
+                        <td class="align-middle text-muted small">{{ (worker.created_at or worker.updated_at).strftime('%Y-%m-%d') }}</td>
                         <td class="align-middle"><strong>{{ worker.full_name }}</strong></td>
                         <td class="align-middle text-muted small">
                             <span class="text-dark">{{ worker.email }}</span><br>

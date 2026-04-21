@@ -1325,6 +1325,12 @@ def report_worker(worker_id):
 def admin_worker_requests():
     """View pending worker verifications"""
     pending_workers = worker_model.get_pending_workers()
+    
+    # Defensive fix: ensure all workers have created_at for template
+    for worker in pending_workers:
+        if 'created_at' not in worker:
+            worker['created_at'] = worker.get('updated_at', datetime.utcnow())
+            
     return render_template('admin_worker_requests.html', pending_workers=pending_workers)
 
 @app.route('/admin/approve_worker/<worker_id>', methods=['POST'])

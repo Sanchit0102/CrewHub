@@ -196,6 +196,7 @@ class Worker:
             'is_banned': False,
             'ban_until': None, # new field for temporary bans
             'income_balance': 0.0, # new field for payout tracking
+            'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow()
         }
 
